@@ -1,0 +1,202 @@
+version: "3.9"
+
+services:
+  # --- Base de datos ---
+  db:
+    image: postgres:14
+    container_name: factoring_db
+    restart: always
+    environment:
+      POSTGRES_USER: factoring_user
+      POSTGRES_PASSWORD: factoring_pass
+      POSTGRES_DB: factoring_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - factoring_data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: factoring_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "8080:80"
+    depends_on:
+      - db
+
+  # --- Núcleo Flask ---
+  factoring_app:
+    build:
+      context: .
+      dockerfile: factoring_app/Dockerfile
+    container_name: factoring_app
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://factoring_user:factoring_pass@db:5432/factoring_db
+      FLASK_ENV: development
+      PRICING_MODE: internal
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db
+      - pricing_internal_service
+      - pricing_external_service
+      - pricing_rabbitmq_adapter
+      - notification_kafka_adapter
+
+  # --- Servicios externos ---
+  sunat_service:
+    build:
+      context: .
+      dockerfile: sunat_adapter/Dockerfile
+    container_name: sunat_service
+    restart: always
+    ports:
+      - "6000:6000"
+
+  pricing_internal_service:
+    build:
+      context: .
+      dockerfile: pricing_internal_adapter/Dockerfile
+    container_name: pricing_internal_service
+    restart: always
+    ports:
+      - "6100:6100"
+
+  pricing_external_service:
+    build:
+      context: .
+      dockerfile: pricing_external_adapter/Dockerfile
+    container_name: pricing_external_service
+    restart: always
+    ports:
+      - "6110:6110"
+
+  notification_service:
+    build:
+      context: .
+      dockerfile: notification_adapter/Dockerfile
+    container_name: notification_service
+    restart: always
+    ports:
+      - "6200:6200"
+
+  bank_service:
+    build:
+      context: .
+      dockerfile: bank_adapter/Dockerfile
+    container_name: bank_service
+    restart: always
+    ports:
+      - "6300:6300"
+
+  # --- RabbitMQ ---
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: factoring_user
+      RABBITMQ_DEFAULT_PASS: factoring_pass
+    container_name: rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pricing_rabbitmq_adapter:
+    build:
+      context: .
+      dockerfile: pricing_rabbitmq_adapter/Dockerfile
+    container_name: pricing_rabbitmq_adapter
+    restart: always
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: factoring_user
+      RABBITMQ_PASS: factoring_pass
+      RABBITMQ_QUEUE: pricing_queue
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "6400:6400"
+
+  pricing_publisher_adapter:
+    build:
+      context: .
+      dockerfile: pricing_publisher_adapter/Dockerfile
+    container_name: pricing_publisher_adapter
+    restart: always
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: factoring_user
+      RABBITMQ_PASS: factoring_pass
+      RABBITMQ_QUEUE: pricing_queue
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "6410:6410"
+
+  # --- Kafka + Zookeeper ---
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: zookeeper
+    restart: always
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka
+    restart: always
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://:9092      
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092      
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+
+  # --- Kafka UI opcional ---
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    restart: always
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    ports:
+      - "8081:8080"
+
+  notification_kafka_adapter:
+    build:
+      context: .
+      dockerfile: notification_kafka_adapter/Dockerfile
+    container_name: notification_kafka_adapter
+    restart: always
+    environment:
+      KAFKA_BROKER: kafka:9092
+      KAFKA_TOPIC: notifications
+    depends_on:
+      - kafka
+    ports:
+      - "6500:6500"
+
+volumes:
+  factoring_data:
