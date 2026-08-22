@@ -15,18 +15,6 @@ services:
     volumes:
       - factoring_data:/var/lib/postgresql/data
 
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: factoring_pgadmin
-    restart: always
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: admin123
-    ports:
-      - "8080:80"
-    depends_on:
-      - db
-
   # --- Núcleo Flask ---
   factoring_app:
     build:
@@ -37,14 +25,12 @@ services:
     environment:
       DATABASE_URL: postgresql://factoring_user:factoring_pass@db:5432/factoring_db
       FLASK_ENV: development
-      PRICING_MODE: internal
     ports:
       - "5000:5000"
     depends_on:
       - db
-      - pricing_internal_service
-      - pricing_external_service
       - pricing_rabbitmq_adapter
+      - pricing_publisher_adapter
       - notification_kafka_adapter
 
   # --- Servicios externos ---
@@ -56,33 +42,6 @@ services:
     restart: always
     ports:
       - "6000:6000"
-
-  pricing_internal_service:
-    build:
-      context: .
-      dockerfile: pricing_internal_adapter/Dockerfile
-    container_name: pricing_internal_service
-    restart: always
-    ports:
-      - "6100:6100"
-
-  pricing_external_service:
-    build:
-      context: .
-      dockerfile: pricing_external_adapter/Dockerfile
-    container_name: pricing_external_service
-    restart: always
-    ports:
-      - "6110:6110"
-
-  notification_service:
-    build:
-      context: .
-      dockerfile: notification_adapter/Dockerfile
-    container_name: notification_service
-    restart: always
-    ports:
-      - "6200:6200"
 
   bank_service:
     build:
@@ -162,8 +121,8 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENERS: PLAINTEXT://:9092      
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092      
+      KAFKA_LISTENERS: PLAINTEXT://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     ports:
       - "9092:9092"

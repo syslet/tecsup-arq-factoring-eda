@@ -1,62 +1,16 @@
-import os
 import requests
 from flask import Flask, request, jsonify
 from datetime import datetime
-import traceback 
 
 from factoring_app.infrastructure.db_config import SessionLocal, init_db
 from factoring_app.domain.entities import User, Company, CompanyDocument, InvoiceSheet, Invoice, Disbursement
-from factoring_app.application.venta_use_cases import CalcularPricingUseCase
 from factoring_app.application.desembolso_use_cases import EjecutarDesembolsoUseCase
-from factoring_app.domain.ports import PricingPort
-
 
 app = Flask(__name__)
 init_db()
 
 SUNAT_URL = "http://sunat_service:6000"
-NOTIF_URL = "http://notification_service:6200"
 BANK_URL = "http://bank_service:6300"
-
-# Variable de entorno para seleccionar adaptador
-PRICING_MODE = os.getenv("PRICING_MODE", "internal")
-
-class InternalPricingAdapter(PricingPort):
-    def calcular_pricing(self, total_amount: float, advance_amount: float) -> dict:
-        advance_rate = advance_amount / total_amount
-        monthly_rate = 0.02
-        net_disbursement = advance_amount - (total_amount * monthly_rate)
-        return {
-            "advance_rate": round(advance_rate, 2),
-            "monthly_rate": monthly_rate,
-            "net_disbursement": net_disbursement,
-            "source": "internal_adapter"
-        }
-
-class RestPricingAdapter(PricingPort):
-    def __init__(self, base_url: str):
-        self.base_url = base_url
-
-    def calcular_pricing(self, total_amount: float, advance_amount: float) -> dict:
-        resp = requests.post(f"{self.base_url}/pricing/calcular", json={
-            "total_amount": total_amount,
-            "advance_amount": advance_amount
-        })
-        return resp.json()
-
-# Selección dinámica del adaptador
-if PRICING_MODE == "internal":
-    pricing_adapter = InternalPricingAdapter()
-else:
-    pricing_adapter = RestPricingAdapter("http://pricing_external_service:6110")
-
-pricing_use_case = CalcularPricingUseCase(pricing_adapter)
-
-@app.route("/pricing/calcular", methods=["POST"])
-def calcular_pricing():
-    data = request.json
-    result = pricing_use_case.execute(data["total_amount"], data["advance_amount"])
-    return jsonify(result)
 
 # =========================
 # Endpoints de registro y negocio
@@ -71,6 +25,7 @@ def registrar_usuario():
     db.commit()
     return jsonify({"status": "Usuario registrado", "id": usuario.id})
 
+
 @app.route("/registro/empresa", methods=["POST"])
 def registrar_empresa():
     data = request.json
@@ -83,6 +38,7 @@ def registrar_empresa():
     db.add(empresa)
     db.commit()
     return jsonify({"status": "Empresa registrada", "id": empresa.id})
+
 
 @app.route("/registro/documento", methods=["POST"])
 def registrar_documento():
@@ -98,6 +54,7 @@ def registrar_documento():
     db.add(documento)
     db.commit()
     return jsonify({"status": "Documento registrado", "id": documento.id})
+
 
 @app.route("/venta/planilla", methods=["POST"])
 def registrar_planilla():
@@ -165,7 +122,6 @@ def registrar_planilla():
         db.close()
 
 
-
 @app.route("/desembolso", methods=["POST"])
 def ejecutar_desembolso():
     data = request.json
@@ -174,4 +130,3 @@ def ejecutar_desembolso():
     if "error" in resultado:
         return jsonify(resultado), 400
     return jsonify(resultado)
-

@@ -2,9 +2,8 @@ from factoring_app.domain.entities import InvoiceSheet, Sale, Invoice
 from factoring_app.infrastructure.db_config import SessionLocal
 from pricing_rabbitmq_adapter.pricing_rabbitmq_service import get_latest_pricing
 
-
 class RegistrarPlanillaUseCase:
-    def __init__(self, sheet_repo, invoice_repo, validacion_service):
+    def __init__(self, sheet_repo=None, invoice_repo=None, validacion_service=None):
         self.sheet_repo = sheet_repo
         self.invoice_repo = invoice_repo
         self.validacion_service = validacion_service
@@ -32,12 +31,12 @@ class RegistrarPlanillaUseCase:
             # 3. Validar facturas con SUNAT
             if invoices:
                 for factura in invoices:
-                    if not self.validacion_service.validar_factura(factura):
+                    if self.validacion_service and not self.validacion_service.validar_factura(factura):
                         raise ValueError(f"Factura inválida: {factura.invoice_number}")
-                    self.invoice_repo.guardar_factura(factura)
+                    db.add(factura)
 
             # 4. Guardar planilla
-            self.sheet_repo.guardar_planilla(planilla)
+            db.add(planilla)
 
             # 5. Guardar registro en tabla sales
             venta = Sale(
@@ -49,7 +48,12 @@ class RegistrarPlanillaUseCase:
                 monto_final=planilla.net_disbursement
             )
             db.add(venta)
+
+            print(f"[DEBUG] Insertando venta en sales: total={venta.total_amount}, advance={venta.advance_amount}, rate={venta.advance_rate}")
+
+            # 6. Commit conjunto
             db.commit()
+            db.refresh(planilla)
             db.refresh(venta)
 
             return {

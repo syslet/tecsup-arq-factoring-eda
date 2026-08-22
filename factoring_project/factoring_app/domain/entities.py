@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Date, Float, ForeignKey, Boolean, Text, TIMESTAMP, DateTime
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
+from sqlalchemy.sql import func
 
 Base = declarative_base()
 
@@ -113,6 +114,8 @@ class Sale(Base):
     advance_amount = Column(Float, nullable=False)
     advance_rate = Column(Float, nullable=False)
     pricing_rate = Column(Float, nullable=False)
-    pricing_timestamp = Column(String, nullable=False)  # guardamos el timestamp como string ISO
+    pricing_timestamp = Column(String(50), nullable=False)  # ISO string
     monto_final = Column(Float, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    
